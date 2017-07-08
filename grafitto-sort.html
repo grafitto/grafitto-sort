@@ -1,0 +1,335 @@
+<!--
+@license
+Copyright (c) 2015 The Polymer Project Authors. All rights reserved.
+This code may only be used under the BSD style license found at http://polymer.github.io/LICENSE.txt
+The complete set of authors may be found at http://polymer.github.io/AUTHORS.txt
+The complete set of contributors may be found at http://polymer.github.io/CONTRIBUTORS.txt
+Code distributed by Google as part of the polymer project is also
+subject to an additional IP rights grant found at http://polymer.github.io/PATENTS.txt
+-->
+<link rel="import" href="../polymer/polymer.html">
+
+<!--
+`grafitto-filter` is a Polymer reusable web component providing a solution for sorting a list of items before displaying them.
+This component also supports use of custom filter functions using the `f` property. 
+
+Install:
+```bash
+bower install --save grafitto/grafitto-sort
+```
+
+`array`:
+```javascript
+var array = ["one", "two", "three", "four", "five", "six", "seven"];
+```
+```html
+<grafitto-sort item=[[array]] as="vitu">
+  <template>
+    <iron-list items=[[vitu]] as="item">
+      <template>
+        <div>{{item}}</div>
+      </template>
+    </iron-list>
+  </template> 
+</grafitto-sort>
+```
+Items will be sorted to this order: `"five","four","one","seven","six","three", "two"`
+When a simple array is provided, a simple sort is done.
+
+### Arrays of Objects   
+`data`:
+```javascript
+var data = [
+  {
+    name:"John",
+    home: "Thika"
+  },
+  {
+    name: "Doe",
+    home: "Nairobi"
+  }
+]
+```
+Example:
+```html
+<grafitto-sort items=[[data]] by="name" as="vitu">
+  <template>
+    <iron-list items=[[vitu]] as="item">
+      <template>
+        <div>{{item.name}} - {{grafitto.home}}</div>
+      </template>
+    </iron-list>
+  </template>
+</grafitto-sort>
+```
+Just incase you are wondering, `vitu` means `items` in Swahili :-)
+
+Items are sorted using the `by` attribute
+
+`grafitto-sort` also supports complex objects. consider:
+
+
+```javascript
+var complexObj = [
+  {
+    name: {
+      first: "Thomas",
+      second: "Kimtu"
+    },
+    home: "Thika"
+  },
+  {
+    name: {
+      first: "John",
+      second: "Doe"
+    },
+    home: "Othaya"
+  },
+  {
+    name: {
+      first: "Clement",
+      second: "Wainaina"
+    },
+    home: "Nakuru"
+  }
+]
+``` 
+Here is an example using the `complexObj` object above
+
+```html
+<grafitto-sort items=[[complexObj]] by="name.first" as="vitu">
+  <template>
+    <iron-list items=[[vitu]] as="item">
+      <template>
+        <div>{{item.name.first}} {{item.name.second}}, {{item.home}}</div>
+      </template>
+    </iron-list>
+  </template>
+</grafitto-sort>
+```
+
+You can also use your custom function to sort the items provided.
+The function receives a two instances of the items provided and should return a `boolean` 
+
+```html
+<dom-module id="your-element">
+  <template>
+    <grafitto-sort items=[[data]] id="filter" as="vitu">
+      <template>
+        <iron-list items=[[vitu]] as="item">
+          <template>
+            <div>{{item.name}}, {{item.home}}</div>
+          </template>
+        </iron-list>
+      </template>
+    </grafitto-sort>
+    <script>
+      Polymer({
+        is: "your-element",
+        properties: {
+          data: {
+            type: Array,
+            value: [
+                    {
+                      "name":"John",
+                      "home": "Thika"
+                    },
+                    {
+                      "name": "Doe",
+                      "home": "Nairobi"
+                    }
+                  ]
+          }
+        },
+        ready: function(){
+          this.$.filter.f = function(first, second){
+            return first.localCompare(second);
+          };
+          //treat f as if it will be used as a parameter in sort() function, 
+          //because it will :-)
+        }
+       //Then you can call sort() function to trigger sort
+      })
+    </script>
+  </template>
+</dom-module>
+```
+
+@element grafitto-sort
+@demo demo/index.html
+-->
+<dom-module id="grafitto-sort">
+      <template>
+        <div id="dom">
+          <content id="template" select="template" ></content>
+        </div>
+      </template>
+</dom-module>
+
+<script>
+
+  Polymer({
+
+    is: 'grafitto-sort',
+
+    properties: {
+      /**
+      * These are the items to be sorted
+      */
+      items: {
+        type: Array,
+        value: []
+      },
+      /**
+      * The sort-by field of your items array of objects
+      */
+      by: {
+        type: String,
+        value: 'name'
+      },
+      /**
+      * Enable case sensitivity when sorting
+      */
+      caseSensitive:{
+        type: Boolean,
+        value: false,
+        reflectToAttribute: true
+      },
+      /**
+      * How the sorted items will be passed to the light-DOM. Default `items`
+      */
+      as: {
+        type: String,
+        value: 'items'
+      },
+      /**
+      * Sorted items
+      */
+      _sorted: {
+        type: Array,
+        computed: '_computeSorted(items, by, caseSensitive, desc)',
+        observer: '_onSort'
+      },
+      /**
+      * Custom filter function, if this is provided then 'where' and 'like' are ignored
+      */
+      f: {
+        type: Function,
+        notify: true
+      },
+      /**
+      * Force sorting in a descendin order
+      */
+      desc: {
+        type: Boolean,
+        value: false,
+      }
+    },
+    observers:[
+      '_populateUserTemplate(_sorted)'
+    ],
+    behaviors: [
+      Polymer.Templatizer
+    ],
+    /**
+    * Filters the items using the f function provided. Recommended when f function is provided
+    */
+    sort: function(){
+      //This forces _computeSorted function to do its job :-)
+      this.by = "";
+     },
+    /**
+     * This filters the items provided
+     *
+     * @param {array} items These are the items to be filtered.
+     * @param {string} by The filterby string.
+     * @param {string} caseSensitive This is a flag to determine whether filter should be case sensitive or not..
+     * @param {boolean} DESC force sorting in a descending order.
+     * @return array} Filter results.
+     */
+    _computeSorted: function(items, by, caseSensitive, desc) { 
+      var sorted = [];
+      if(this.f){
+        var customFunction = this.f.bind(this);
+        sorted = items.sort(customFunction);
+      }else{
+        //Save a reference to this object
+        var self = this;
+        //Filter by `like`
+        sorted = items.sort(function(first, second){ 
+          
+          //Checks the 
+          if(typeof first == "object"){
+            var firstDecomposed = self._decomposeWhere(by, first);
+            var secondDecomposed = self._decomposeWhere(by, second);
+
+            return self._getComparison(firstDecomposed, secondDecomposed, desc, caseSensitive);
+          }
+
+          if(typeof first == "string"){
+            return self._getComparison(first, second, desc, caseSensitive);
+          }
+
+          if(typeof first == "number"){
+            if(desc){
+              return second - first;
+            }
+            return first - second;
+          }
+        })
+      }
+      return sorted;
+    },
+    /**
+    * Compares two strings given descending and case sensitivity conditions.
+    * @param {string} first The first item when comparing.
+    * @param {string} second The second item when comparing.
+    * @param {Boolean} desc Enable descending order when sorting.
+    * @param {Boolean} caseSensitive Enable case sensitivity when sorting.
+    * @return {Number} Negative, Zero or Positive value.
+    */
+    _getComparison: function(first, second, desc, caseSensitive){
+      if(desc && caseSensitive){
+        return second.toLowerCase().localeCompare(first.toLowerCase());
+      }else if(caseSensitive && !desc){
+        return first.toLowerCase().localeCompare(second.toLowerCase());
+      }else if(!caseSensitive && desc){
+        return second.localeCompare(first);
+      }else if(!caseSensitive && !desc){
+        return first.localeCompare(second);
+      }   
+    },
+    
+    /**
+    * Populates user template
+    *@param {array} _sorted the filtered array to be displayed
+    */
+    _populateUserTemplate: function(_sorted){
+      this._userTemplate = Polymer.dom(this.$.template).getDistributedNodes()[0];
+      if(this._userTemplate){
+        this.templatize(this._userTemplate);
+        var clone = this.stamp();
+        clone[this.as] = _sorted;
+        Polymer.dom(this.$.dom).innerHTML = "";
+        Polymer.dom(this.$.dom).appendChild(clone.root);
+      }else{
+        console.warn('grafitto-sort requires a template to be provided in light-dom');
+      }
+    },
+    /**
+    * This decomposes `where` property to object attributes using . notation
+    */
+    _decomposeWhere: function(by, item){
+      return by.split(".").reduce(function(a, b){ return a && a[b]; }, item);
+    },
+     /**
+     * The `sort` event is fired whenever sorting is done before populating the dom.
+     *
+     * @event sort
+     */
+    _onSort: function(){
+      this.fire("sort");
+    }
+  });
+
+</script>
